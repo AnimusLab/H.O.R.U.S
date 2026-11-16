@@ -1,0 +1,7 @@
+.env
+.env.local
+.next/
+node_modules/
+server-rust/target/
+eidolon-proxy/target/
+engine-cpp/*.exe

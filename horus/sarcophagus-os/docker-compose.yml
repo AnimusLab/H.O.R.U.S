@@ -1,0 +1,20 @@
+services:
+  processing-sandbox:
+    image: alpine:3.20
+    command: ["sh", "-c", "echo 'H.O.R.U.S ephemeral processing sandbox ready'; sleep infinity"]
+    read_only: true
+    tmpfs:
+      - /run:size=64m,noexec,nosuid,nodev
+      - /tmp:size=256m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - internal-processing
+    logging:
+      driver: "none"
+
+networks:
+  internal-processing:
+    internal: true
