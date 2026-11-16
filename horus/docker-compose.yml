@@ -1,0 +1,75 @@
+services:
+  horus-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_TELEMETRY_WS_URL: ${NEXT_PUBLIC_TELEMETRY_WS_URL}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+    depends_on:
+      horus-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  horus-server:
+    build:
+      context: .
+      dockerfile: server-rust/Dockerfile
+    ports:
+      - "${RUST_SERVER_PORT:-4000}:4000"
+    depends_on:
+      eidolon-gateway:
+        condition: service_healthy
+    environment:
+      USGS_FEED_URL: ${USGS_FEED_URL}
+      USGS_POLL_INTERVAL_SECONDS: ${USGS_POLL_INTERVAL_SECONDS:-60}
+      NOAA_ALERTS_URL: ${NOAA_ALERTS_URL}
+      NOAA_POLL_INTERVAL_SECONDS: ${NOAA_POLL_INTERVAL_SECONDS:-120}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  eidolon-gateway:
+    build:
+      context: .
+      dockerfile: eidolon-proxy/Dockerfile
+    ports:
+      - "${EIDOLON_PORT:-5000}:5000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  sarcophagus-sandbox:
+    image: alpine:3.20
+    command: ["sh", "-c", "echo 'H.O.R.U.S ephemeral processing sandbox ready'; sleep infinity"]
+    read_only: true
+    tmpfs:
+      - /run:size=64m,noexec,nosuid,nodev
+      - /tmp:size=256m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - internal-processing
+
+networks:
+  internal-processing:
+    internal: true

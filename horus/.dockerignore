@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+server-rust/target
+eidolon-proxy/target
+engine-cpp/build
+engine-cpp/*.exe
+*.log
