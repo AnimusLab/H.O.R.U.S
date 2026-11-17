@@ -505,20 +505,36 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         .fetch_add(1, Ordering::Relaxed);
     let mut events = state.events.subscribe();
     let (mut sender, mut receiver) = socket.split();
-    let send_task = tokio::spawn(async move {
-        while let Ok(payload) = events.recv().await {
-            if sender.send(Message::Text(payload)).await.is_err() {
-                break;
+    loop {
+        tokio::select! {
+            payload = next_broadcast_payload(&mut events) => {
+                let Some(payload) = payload else { break };
+                if sender.send(Message::Text(payload)).await.is_err() {
+                    break;
+                }
+            }
+            message = receiver.next() => {
+                match message {
+                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                    Some(Ok(_)) => {}
+                }
             }
         }
-    });
-
-    while receiver.next().await.is_some() {}
-    send_task.abort();
+    }
     state
         .activity
         .websocket_clients
         .fetch_sub(1, Ordering::Relaxed);
+}
+
+async fn next_broadcast_payload(events: &mut broadcast::Receiver<String>) -> Option<String> {
+    loop {
+        match events.recv().await {
+            Ok(payload) => return Some(payload),
+            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(broadcast::error::RecvError::Closed) => return None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -689,5 +705,21 @@ mod tests {
 
         socket.close(None).await.expect("websocket should close");
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn lagged_broadcast_receiver_recovers_with_latest_payload() {
+        let (events, _) = broadcast::channel(1);
+        let mut receiver = events.subscribe();
+        events
+            .send("stale".to_string())
+            .expect("stale payload should broadcast");
+        events
+            .send("latest".to_string())
+            .expect("latest payload should replace stale payload");
+
+        let payload = next_broadcast_payload(&mut receiver).await;
+
+        assert_eq!(payload, Some("latest".to_string()));
     }
 }
